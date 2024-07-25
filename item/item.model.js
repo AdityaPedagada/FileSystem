@@ -23,7 +23,9 @@ const itemSchema = new mongoose.Schema({
   originalLocation: String,
   originalDeviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Device' },
   internalTags: [String],
-  userTags: [String]
+  userTags: [String],
+  fileCreatedOn: { type: Date },
+  fileModifiedOn: { type: Date }
 });
 
 module.exports = mongoose.model('Item', itemSchema);

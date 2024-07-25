@@ -63,10 +63,21 @@ exports.generateThumbnail = async (file) => {
 exports.extractMetadata = async (file) => {
   try {
     const metadata = await exifr.parse(file.buffer);
-    return metadata;
+    
+    const fileCreatedOn = metadata.CreateDate || metadata.DateTimeOriginal || new Date();
+    const fileModifiedOn = metadata.ModifyDate || new Date();
+
+    return {
+      ...metadata,
+      fileCreatedOn,
+      fileModifiedOn
+    };
   } catch (error) {
     console.error('Error extracting metadata:', error);
-    return {};
+    return {
+      fileCreatedOn: new Date(),
+      fileModifiedOn: new Date()
+    };
   }
 };
 
@@ -86,14 +97,46 @@ exports.generateInternalTags = (mimeType, extension) => {
   return tags;
 };
 
-exports.deleteFile = async (fileUrl) => {
+exports.getSignedUrl = async (fileUrl) => {
   const key = fileUrl.split('/').pop();
   const params = {
     Bucket: BUCKET_NAME,
     Key: key,
+    Expires: 3600 // URL expires in 1 hour
   };
 
   try {
+    return await s3.getSignedUrlPromise('getObject', params);
+  } catch (error) {
+    console.error('Error generating signed URL:', error);
+    throw new Error(`Error generating signed URL: ${error.message}`);
+  }
+};
+
+exports.getFullPath = async (itemId) => {
+  const Item = require('./item.model'); // Require here to avoid circular dependency
+  let fullPath = [];
+  let currentItem = await Item.findById(itemId);
+
+  while (currentItem) {
+    fullPath.unshift(currentItem.name);
+    if (!currentItem.parentFolderId) break;
+    currentItem = await Item.findById(currentItem.parentFolderId);
+  }
+
+  return fullPath.join('/');
+};
+
+exports.deleteFile = async (fileUrl) => {
+  if (!fileUrl) return;
+
+  try {
+    const key = fileUrl.split('/').pop();
+    const params = {
+      Bucket: BUCKET_NAME,
+      Key: key,
+    };
+
     await s3.deleteObject(params).promise();
   } catch (error) {
     throw new Error(`Error deleting file: ${error.message}`);
