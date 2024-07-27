@@ -12,5 +12,9 @@ router.delete('/:id', itemController.deleteItem);
 router.get('archive/:id', itemController.archiveItem);
 router.get('restore/:id', itemController.restoreItem);
 router.post('access/:id', itemController.updateAccess);
+router.post('shared_link/:id', itemController.createSharedLink);
+router.delete('shared_link/:id', itemController.removeSharedLink);
+router.get('accessed/:id', itemController.updateLastAccessed);
+
 
 module.exports = router;

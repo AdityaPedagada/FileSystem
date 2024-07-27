@@ -94,7 +94,7 @@ exports.updateItem = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const allowedUpdates = ['name', 'description', 'isArchived', 'isHidden', 'customProperties'];
+    const allowedUpdates = ['name', 'description', 'isArchived', 'isHidden', 'customProperties', 'userTags', 'parentFolderId', 'isEncrypted', 'compressionType', 'sharedLink' ];
     const updates = {};
 
     allowedUpdates.forEach(field => {
@@ -359,6 +359,87 @@ exports.updateAccess = async (req, res) => {
     await item.save();
     
     res.json(item);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.createSharedLink = async (req, res) => {
+  try {
+    const { expirationDate } = req.body;
+    const item = await Item.findById(req.params.id);
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+
+    const hasAccess = item.owner.equals(req.user._id) || 
+      item.access.some(access => access.user.equals(req.user._id) && ['write', 'admin'].includes(access.permission));
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    item.sharedLink = await itemService.generateSharedLink();
+    item.expirationDate = expirationDate ? new Date(expirationDate) : null;
+    item.lastModifiedOn = new Date();
+    item.lastModifiedBy = req.user._id;
+
+    await item.save();
+    
+    res.json({ sharedLink: item.sharedLink, expirationDate: item.expirationDate });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.removeSharedLink = async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+
+    const hasAccess = item.owner.equals(req.user._id) || 
+      item.access.some(access => access.user.equals(req.user._id) && ['write', 'admin'].includes(access.permission));
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    item.sharedLink = null;
+    item.expirationDate = null;
+    item.lastModifiedOn = new Date();
+    item.lastModifiedBy = req.user._id;
+
+    await item.save();
+    
+    res.json({ message: 'Shared link removed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateLastAccessed = async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+
+    const hasAccess = item.owner.equals(req.user._id) || 
+      item.access.some(access => access.user.equals(req.user._id));
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    item.lastAccessedOn = new Date();
+    await item.save();
+    
+    res.json({ message: 'Last accessed time updated successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
