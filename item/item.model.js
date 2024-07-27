@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const itemSchema = new mongoose.Schema({
-  name: { type: String, required: true }, // Will include extension for files
+  name: { type: String, required: true },
   originalName: { type: String, required: true },
   type: { type: String, enum: ['file', 'folder'], required: true },
   description: String,
@@ -25,7 +25,17 @@ const itemSchema = new mongoose.Schema({
   internalTags: [String],
   userTags: [String],
   fileCreatedOn: { type: Date },
-  fileModifiedOn: { type: Date }
+  fileModifiedOn: { type: Date },
+  version: { type: Number, default: 1 },
+  isArchived: { type: Boolean, default: false },
+  sharedLink: String,
+  expirationDate: Date,
+  isEncrypted: Boolean,
+  checksumHash: String,
+  compressionType: String,
+  lastAccessedOn: Date,
+  isHidden: Boolean,
+  customProperties: mongoose.Schema.Types.Mixed
 });
 
 module.exports = mongoose.model('Item', itemSchema);

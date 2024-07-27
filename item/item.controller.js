@@ -7,7 +7,6 @@ exports.createItem = async (req, res) => {
     let item;
 
     if (!req.file) {
-      // Handle folder creation
       item = new Item({
         name: req.body.name,
         originalName: req.body.name,
@@ -17,10 +16,13 @@ exports.createItem = async (req, res) => {
         owner: req.user._id,
         originalDeviceId: req.session.deviceId,
         createdOn: new Date(),
-        lastModifiedOn: new Date()
+        lastModifiedOn: new Date(),
+        version: 1,
+        isArchived: false,
+        isHidden: req.body.isHidden || false,
+        customProperties: req.body.customProperties || {}
       });
     } else {
-      // Handle file creation
       const file = req.file;
       const fileUrl = await itemService.uploadFile(file);
       const thumbnailUrl = await itemService.generateThumbnail(file);
@@ -46,8 +48,28 @@ exports.createItem = async (req, res) => {
         createdOn: new Date(),
         lastModifiedOn: new Date(),
         fileCreatedOn: metadata.fileCreatedOn,
-        fileModifiedOn: metadata.fileModifiedOn
+        fileModifiedOn: metadata.fileModifiedOn,
+        version: 1,
+        isArchived: false,
+        isEncrypted: req.body.isEncrypted || false,
+        checksumHash: await itemService.generateChecksumHash(file.buffer),
+        compressionType: req.body.compressionType,
+        isHidden: req.body.isHidden || false,
+        customProperties: req.body.customProperties || {}
       });
+    }
+
+    // Check if user has write access to parent folder
+    if (item.parentFolderId) {
+      const parentFolder = await Item.findById(item.parentFolderId);
+      if (!parentFolder) {
+        return res.status(404).json({ message: 'Parent folder not found' });
+      }
+      const hasAccess = parentFolder.owner.equals(req.user._id) || 
+        parentFolder.access.some(access => access.user.equals(req.user._id) && ['write', 'admin'].includes(access.permission));
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied to parent folder' });
+      }
     }
 
     await item.save();
@@ -66,7 +88,13 @@ exports.updateItem = async (req, res) => {
       return res.status(404).json({ message: 'Item not found' });
     }
 
-    const allowedUpdates = ['name', 'description'];
+    const hasAccess = existingItem.owner.equals(req.user._id) || 
+      existingItem.access.some(access => access.user.equals(req.user._id) && ['write', 'admin'].includes(access.permission));
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const allowedUpdates = ['name', 'description', 'isArchived', 'isHidden', 'customProperties'];
     const updates = {};
 
     allowedUpdates.forEach(field => {
@@ -77,6 +105,7 @@ exports.updateItem = async (req, res) => {
 
     updates.lastModifiedOn = new Date();
     updates.lastModifiedBy = req.user._id;
+    updates.version = existingItem.version + 1;
 
     if (req.file) {
       const file = req.file;
@@ -94,6 +123,7 @@ exports.updateItem = async (req, res) => {
       updates.internalTags = itemService.generateInternalTags(file.mimetype, updates.extension);
       updates.fileCreatedOn = metadata.fileCreatedOn;
       updates.fileModifiedOn = metadata.fileModifiedOn;
+      updates.checksumHash = await itemService.generateChecksumHash(file.buffer);
 
       if (existingItem.fileUrl) {
         await itemService.deleteFile(existingItem.fileUrl);
@@ -107,6 +137,7 @@ exports.updateItem = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 };
+
 exports.getItems = async (req, res) => {
   try {
     const {
@@ -226,10 +257,108 @@ exports.getItem = async (req, res) => {
 
 exports.deleteItem = async (req, res) => {
   try {
-    const item = await Item.findByIdAndDelete(req.params.id);
+    const item = await Item.findById(req.params.id);
     if (!item) return res.status(404).json({ message: 'Item not found' });
-    await itemService.deleteFile(item.imageUrl);
+
+    const hasAccess = item.owner.equals(req.user._id) || 
+      item.access.some(access => access.user.equals(req.user._id) && access.permission === 'admin');
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    await Item.findByIdAndDelete(req.params.id);
+    if (item.fileUrl) {
+      await itemService.deleteFile(item.fileUrl);
+    }
     res.json({ message: 'Item deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.archiveItem = async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+
+    const hasAccess = item.owner.equals(req.user._id) || 
+      item.access.some(access => access.user.equals(req.user._id) && ['write', 'admin'].includes(access.permission));
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    item.isArchived = true;
+    item.lastModifiedOn = new Date();
+    item.lastModifiedBy = req.user._id;
+
+    await item.save();
+    
+    res.json(item);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.restoreItem = async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+
+    const hasAccess = item.owner.equals(req.user._id) || 
+      item.access.some(access => access.user.equals(req.user._id) && ['write', 'admin'].includes(access.permission));
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    item.isArchived = false;
+    item.lastModifiedOn = new Date();
+    item.lastModifiedBy = req.user._id;
+
+    await item.save();
+    
+    res.json(item);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateAccess = async (req, res) => {
+  try {
+    const { userId, permission } = req.body;
+    const item = await Item.findById(req.params.id);
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+
+    const hasAccess = item.owner.equals(req.user._id) || 
+      item.access.some(access => access.user.equals(req.user._id) && access.permission === 'admin');
+    
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const accessIndex = item.access.findIndex(a => a.user.toString() === userId);
+    if (accessIndex > -1) {
+      item.access[accessIndex].permission = permission;
+    } else {
+      item.access.push({ user: userId, permission });
+    }
+
+    item.lastModifiedOn = new Date();
+    item.lastModifiedBy = req.user._id;
+    
+    await item.save();
+    
+    res.json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

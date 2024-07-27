@@ -9,5 +9,8 @@ router.get('/', itemController.getItems);
 router.get('/:id', itemController.getItem);
 router.put('/:id', itemController.updateItem);
 router.delete('/:id', itemController.deleteItem);
+router.get('archive/:id', itemController.archiveItem);
+router.get('restore/:id', itemController.restoreItem);
+router.post('access/:id', itemController.updateAccess);
 
 module.exports = router;

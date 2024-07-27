@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const sharp = require('sharp');
 const exifr = require('exifr');
 const path = require('path');
+const crypto = require('crypto');
 
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -84,12 +85,22 @@ exports.extractMetadata = async (file) => {
 exports.generateInternalTags = (mimeType, extension) => {
   const tags = [];
 
+  tags.push(mimeType);
+
   if (mimeType.startsWith('image/')) {
-    tags.push('media', 'image');
+    tags.push('image');
   } else if (mimeType.startsWith('video/')) {
-    tags.push('media', 'video');
-  } else if (['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(mimeType)) {
+    tags.push('video');
+  } else if (mimeType.startsWith('audio/')) {
+    tags.push('audio');
+  } else if (mimeType === 'application/pdf') {
+    tags.push('pdf');
+  } else if (['.doc', '.docx'].includes(extension)) {
     tags.push('document');
+  } else if (['.xls', '.xlsx'].includes(extension)) {
+    tags.push('spreadsheet');
+  } else if (['.ppt', '.pptx'].includes(extension)) {
+    tags.push('presentation');
   } else if (['.js', '.py', '.java', '.c', '.cpp', '.html', '.css', '.php'].includes(extension)) {
     tags.push('code');
   }
@@ -111,6 +122,14 @@ exports.getSignedUrl = async (fileUrl) => {
     console.error('Error generating signed URL:', error);
     throw new Error(`Error generating signed URL: ${error.message}`);
   }
+};
+
+exports.generateChecksumHash = (buffer) => {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    hash.update(buffer);
+    resolve(hash.digest('hex'));
+  });
 };
 
 exports.getFullPath = async (itemId) => {
